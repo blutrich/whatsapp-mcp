@@ -31,7 +31,7 @@ Here's an example of what you can do when it's connected to Claude.
 
 ### Prerequisites
 
-- Go
+- Go 1.26+ and a C compiler (the bridge uses cgo for SQLite; on macOS run `xcode-select --install`)
 - Python 3.6+
 - Anthropic Claude Desktop app (or Cursor)
 - UV (Python package manager), install with `curl -LsSf https://astral.sh/uv/install.sh | sh`
@@ -42,7 +42,7 @@ Here's an example of what you can do when it's connected to Claude.
 1. **Clone this repository**
 
    ```bash
-   git clone https://github.com/lharries/whatsapp-mcp.git
+   git clone https://github.com/blutrich/whatsapp-mcp.git
    cd whatsapp-mcp
    ```
 
@@ -184,6 +184,12 @@ By default, just the metadata of the media is stored in the local database. The 
 
 - If you encounter permission issues when running uv, you may need to add it to your PATH or use the full path to the executable.
 - Make sure both the Go application and the Python server are running for the integration to work properly.
+- **Using Claude Code instead of Claude Desktop**: register the server with `claude mcp add whatsapp -- uv --directory /ABSOLUTE/PATH/TO/whatsapp-mcp/whatsapp-mcp-server run main.py`.
+- **macOS build fails with `tapi error: malformed file ... unknown architecture`**: the linker in your Command Line Tools can't read the newest macOS SDK. Either update the Command Line Tools, or build against an older installed SDK (list them with `ls /Library/Developer/CommandLineTools/SDKs/`):
+
+  ```bash
+  SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk go run main.go
+  ```
 
 ### Authentication Issues
 
