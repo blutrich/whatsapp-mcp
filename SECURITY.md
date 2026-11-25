@@ -29,7 +29,7 @@ Severity is a judgement for a single-user computer running the bridge.
 | 15 | **Dependencies with published advisories** (`starlette`, `urllib3`, `golang.org/x/net`, `golang.org/x/crypto`). | Medium | `1ca9595` |
 | 16 | **Lockfile pointed at a private local package proxy,** so installs elsewhere failed and the package source was not the public index. | Medium | `4be78cb` |
 | 17 | **Silent half-start.** When the API port was taken the bridge kept running without an API, and the MCP server would talk to whichever other process held the port. | Low | `1ca9595` |
-| 18 | **Pairing QR images left on disk** after pairing ended or was interrupted. | Low | `1ca9595`, and this commit for interruption |
+| 18 | **Pairing QR images left on disk** after pairing ended or was interrupted. | Low | `1ca9595`, and `ca70fed` for interruption |
 
 ## Known limitations (not fixed, by nature)
 
