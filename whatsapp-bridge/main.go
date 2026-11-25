@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -986,11 +987,13 @@ func runBridge() (exitCode int) {
 
 		case *events.LoggedOut:
 			fmt.Println("WHATSAPP_PHASE logged-out")
+			notifyDesktop(noticeUnlinked, runtime.GOOS)
 			logger.Warnf("Device logged out. Stop the bridge, delete store/whatsapp.db and start it again to scan a new QR code")
 		}
 	})
 
 	// Connect to WhatsApp and wait for pairing when this device has no session.
+	pairedThisRun := false
 	if client.Store.ID == nil {
 		qrContext, cancelQR := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancelQR()
@@ -1051,11 +1054,13 @@ func runBridge() (exitCode int) {
 					}
 				case "success":
 					removeQRFile()
+					pairedThisRun = true
 					break pairing
 				case "err-scanned-without-multidevice":
 					continue
 				case "timeout":
 					fmt.Println("WHATSAPP_PHASE qr-timeout")
+					notifyDesktop(noticeQRTimeout, runtime.GOOS)
 					return
 				default:
 					fmt.Println("WHATSAPP_PHASE pairing-failed")
@@ -1081,6 +1086,11 @@ func runBridge() (exitCode int) {
 	}
 
 	fmt.Println("\n✓ Connected to WhatsApp!")
+	if pairedThisRun {
+		// Tell the person who just scanned the code that it worked
+		fmt.Println("WHATSAPP_PHASE paired")
+		notifyDesktop(noticePaired, runtime.GOOS)
+	}
 
 	// The API token lives in the store; the MCP server reads it from there
 	token, err := loadOrCreateAPIToken(storeDir)

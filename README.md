@@ -51,6 +51,8 @@ go run .
 
 The first run prints a QR code. On your phone open **WhatsApp > Settings > Linked devices > Link a device** and scan it. You have about three minutes.
 
+When the scan succeeds you get a desktop notification, "WhatsApp linked" (macOS, and Linux with `notify-send`). You also get one if the phone later removes this device, or if nobody scans the code in time.
+
 When you see `✓ Connected to WhatsApp!` and `REST server is running`, the bridge is ready. Leave this terminal open. Your chat history arrives over the next few minutes.
 
 WhatsApp ends linked-device sessions after a few weeks of the phone being offline, so you may have to scan again now and then.
@@ -200,6 +202,7 @@ The bridge reports progress on stdout with machine-readable lines:
 | `PAIRING_QR_READY <path>.png` | A QR image was written (only with `WHATSAPP_QR_OUTPUT`). Show it to the user. A new one replaces it about every 20 seconds |
 | `WHATSAPP_PHASE qr-timeout` | Nobody scanned in time. Exit code 1. Start again |
 | `WHATSAPP_PHASE authenticated` | Logged in |
+| `WHATSAPP_PHASE paired` | A QR scan in this run completed and login succeeded |
 | `WHATSAPP_PHASE api-ready` | Local API is listening. The MCP server can be used now |
 | `WHATSAPP_PHASE api-listen-failed` | The port is taken, usually by another bridge. Exit code 1 |
 | `WHATSAPP_PHASE version-refresh-failed`, `connect-failed`, `authentication-timeout`, `pairing-failed` | Could not reach or log in to WhatsApp. Exit code 1 |
@@ -229,6 +232,7 @@ Then call a read-only tool such as `list_chats` through the MCP client. Do not v
 | --- | --- |
 | `whatsapp-bridge/main.go` | WhatsApp connection, pairing, message storage, send and download |
 | `whatsapp-bridge/security.go` | API token, request screening, recipient and file policy, safe paths, send limit |
+| `whatsapp-bridge/notify.go` | Desktop notifications for pairing, unlinking and QR timeout |
 | `whatsapp-bridge/*_test.go` | Unit tests and real-HTTP tests of the local API |
 | `whatsapp-mcp-server/main.py` | MCP tool definitions and the safety instructions sent to the assistant |
 | `whatsapp-mcp-server/whatsapp.py` | Read-only database queries and calls to the bridge API |
@@ -282,6 +286,7 @@ All settings are environment variables. None are required.
 | `WHATSAPP_BRIDGE_PORT` | `8080` | Port of the local API (always on `127.0.0.1`) |
 | `WHATSAPP_QR_OUTPUT` | unset | Path prefix. Saves the pairing QR as `<prefix>-<number>.png` instead of drawing it in the terminal |
 | `WHATSAPP_LOG_MESSAGES` | unset | Set to `1` to include message text in the bridge log |
+| `WHATSAPP_NOTIFY` | on | Set to `0` to turn off desktop notifications |
 
 **MCP server** (set them in your client's MCP configuration, under `env`)
 
@@ -354,7 +359,7 @@ The bridge connects to WhatsApp's servers only (`web.whatsapp.com` and WhatsApp'
 You should not have to trust this README. These commands let you, or a coding agent, verify it.
 
 ```bash
-# Tests: 20 Go tests and 29 Python tests, no WhatsApp account or network needed
+# Tests: 21 Go tests and 29 Python tests, no WhatsApp account or network needed
 cd whatsapp-bridge && go vet . && go test -count=1 -v .
 cd ../whatsapp-mcp-server && uv sync --frozen && uv run python -m unittest discover -s tests -v
 

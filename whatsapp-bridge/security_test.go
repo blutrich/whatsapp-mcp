@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -436,4 +437,32 @@ func TestWaitUntil(t *testing.T) {
 	if waitUntil(300*time.Millisecond, func() bool { return false }) {
 		t.Error("waitUntil reported success for a condition that never became true")
 	}
+}
+
+func TestNotificationCommand(t *testing.T) {
+	found := func(string) (string, error) { return "/usr/bin/notify-send", nil }
+	missing := func(string) (string, error) { return "", errors.New("not found") }
+
+	mac := notificationCommand("darwin", noticePaired, missing)
+	if len(mac) != 3 || mac[0] != "/usr/bin/osascript" || !strings.Contains(mac[2], `with title "WhatsApp linked"`) {
+		t.Errorf("macOS command = %q", mac)
+	}
+	linux := notificationCommand("linux", noticeUnlinked, found)
+	if len(linux) != 4 || linux[2] != "WhatsApp unlinked" {
+		t.Errorf("Linux command = %q", linux)
+	}
+	if got := notificationCommand("linux", noticePaired, missing); got != nil {
+		t.Errorf("no notifier installed, got %q", got)
+	}
+	if got := notificationCommand("windows", noticePaired, found); got != nil {
+		t.Errorf("unsupported system, got %q", got)
+	}
+	// Notification texts are fixed and must stay free of quoting hazards.
+	for _, n := range []notice{noticePaired, noticeUnlinked, noticeQRTimeout} {
+		if strings.ContainsAny(n.title+n.text, "\"\\`$\n") {
+			t.Errorf("notice %q contains a character that needs escaping", n.title)
+		}
+	}
+	t.Setenv("WHATSAPP_NOTIFY", "0")
+	notifyDesktop(noticePaired, "darwin") // must be a no-op, not a popup during tests
 }
