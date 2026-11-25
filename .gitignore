@@ -1,3 +1,13 @@
 *.db
 claude_desktop_config.json
 whatsapp.log
+
+# Never commit your WhatsApp session or message history
+whatsapp-bridge/store/
+# Compiled bridge binary
+whatsapp-bridge/whatsapp-bridge
+# Local tooling
+.claude/
+__pycache__/
+.venv/
+.DS_Store

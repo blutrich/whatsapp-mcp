@@ -2,6 +2,19 @@
 
 This is a Model Context Protocol (MCP) server for WhatsApp.
 
+> **Maintained fork of [lharries/whatsapp-mcp](https://github.com/lharries/whatsapp-mcp)** with fixes that make login work with current WhatsApp:
+>
+> - **Current whatsmeow** (Oct 2026) and the context-aware API it requires
+> - **Fetches the latest WhatsApp Web version** before connecting, so WhatsApp doesn't reject the client as outdated
+> - **IPv4-only connections** to avoid hangs on networks with broken IPv6
+> - **REST API bound to `127.0.0.1`**, so the bridge is no longer reachable from your local network
+> - **Clearer pairing:** a 3-minute QR timeout, a check that login really completed, and `WHATSAPP_PHASE ...` status lines
+> - **Optional QR image:** set `WHATSAPP_QR_OUTPUT=/path/prefix` to save the pairing QR as a PNG instead of drawing it in the terminal
+>
+> Requires Go 1.26+. Setup is otherwise unchanged; follow the steps below.
+>
+> **Privacy:** your session and message history live in `whatsapp-bridge/store/`, which is git-ignored. Never commit or share that folder.
+
 With this you can search and read your personal Whatsapp messages (including images, videos, documents, and audio messages), search your contacts and send messages to either individuals or groups. You can also send media files including images, videos, documents, and audio messages.
 
 It connects to your **personal WhatsApp account** directly via the Whatsapp web multidevice API (using the [whatsmeow](https://github.com/tulir/whatsmeow) library). All your messages are stored locally in a SQLite database and only sent to an LLM (such as Claude) when the agent accesses them through tools (which you control).
