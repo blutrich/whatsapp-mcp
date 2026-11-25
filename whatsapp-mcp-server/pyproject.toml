@@ -7,3 +7,10 @@ requires-python = ">=3.11"
 dependencies = [
     "mcp>=1.6.0,<2",
 ]
+
+# Always resolve from the public index, so the lockfile never records a
+# machine-specific mirror or proxy address.
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
