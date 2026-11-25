@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -210,7 +211,7 @@ type SendMessageRequest struct {
 }
 
 // Function to send a WhatsApp message
-func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string) (bool, string) {
+func sendWhatsAppMessage(client *whatsmeow.Client, messageStore *MessageStore, recipient string, message string, mediaPath string) (bool, string) {
 	if !client.IsConnected() || !client.IsLoggedIn() {
 		return false, "Not connected to WhatsApp"
 	}
@@ -366,13 +367,44 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 	// Send message
 	sendCtx, cancelSend := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancelSend()
-	_, err = client.SendMessage(sendCtx, recipientJID, msg)
+	resp, err := client.SendMessage(sendCtx, recipientJID, msg)
 
 	if err != nil {
 		return false, fmt.Sprintf("Error sending message: %v", err)
 	}
 
+	// WhatsApp does not echo our own sends back to this device, so the
+	// message is saved here; otherwise it would be missing from the history.
+	if messageStore != nil {
+		ownUser := ""
+		if ownID := client.Store.ID; ownID != nil {
+			ownUser = ownID.User
+		}
+		chatJID := recipientJID.String()
+		chatName := GetChatName(client, messageStore, recipientJID, chatJID, nil, "", nil)
+		if err := recordSentMessage(messageStore, chatJID, chatName, ownUser, string(resp.ID), resp.Timestamp, msg, message); err != nil {
+			fmt.Printf("Message sent, but it could not be saved to the local history: %v\n", err)
+		}
+	}
+
 	return true, fmt.Sprintf("Message sent to %s", recipientJID.String())
+}
+
+// recordSentMessage saves a message this bridge just sent, so it appears in
+// the local history next to the replies it gets.
+func recordSentMessage(messageStore *MessageStore, chatJID, chatName, ownUser, messageID string, sentAt time.Time, msg *waProto.Message, text string) error {
+	if messageID == "" {
+		return errors.New("the sent message has no ID")
+	}
+	if sentAt.IsZero() {
+		sentAt = time.Now()
+	}
+	if err := messageStore.StoreChat(chatJID, chatName, sentAt); err != nil {
+		return err
+	}
+	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength := extractMediaInfo(msg)
+	return messageStore.StoreMessage(messageID, chatJID, ownUser, text, sentAt, true,
+		mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength)
 }
 
 // Extract media info from a message
@@ -682,24 +714,22 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	return true, mediaType, localName, absPath, nil
 }
 
-// Extract direct path from a WhatsApp media URL
-func extractDirectPathFromURL(url string) string {
-	// The direct path is typically in the URL, we need to extract it
-	// Example URL: https://mmg.whatsapp.net/v/t62.7118-24/13812002_698058036224062_3424455886509161511_n.enc?ccb=11-4&oh=...
-
-	// Find the path part after the domain
-	parts := strings.SplitN(url, ".net/", 2)
-	if len(parts) < 2 {
-		return url // Return original URL if parsing fails
+// Extract direct path from a WhatsApp media URL.
+// The direct path is everything after the host, INCLUDING the query string:
+// the query carries the access signature (oh=, oe=), and whatsmeow appends
+// "&hash=...&mms-type=..." to it. Dropping the query makes every download
+// fail with HTTP 403.
+// Example URL: https://mmg.whatsapp.net/v/t62.7118-24/1381_n.enc?ccb=11-4&oh=...&oe=...
+func extractDirectPathFromURL(mediaURL string) string {
+	parsed, err := neturl.Parse(mediaURL)
+	if err != nil || parsed.Host == "" || parsed.Path == "" {
+		return mediaURL // Return original URL if parsing fails
 	}
-
-	pathPart := parts[1]
-
-	// Remove query parameters
-	pathPart = strings.SplitN(pathPart, "?", 2)[0]
-
-	// Create proper direct path format
-	return "/" + pathPart
+	if parsed.RawQuery == "" {
+		// Keep the "&hash=" that whatsmeow appends inside a query string
+		return parsed.EscapedPath() + "?"
+	}
+	return parsed.EscapedPath() + "?" + parsed.RawQuery
 }
 
 // Start a REST API server to expose the WhatsApp client functionality
@@ -744,7 +774,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 
 		// Send the message
 		sendMu.Lock()
-		success, message := sendWhatsAppMessage(client, req.Recipient, req.Message, req.MediaPath)
+		success, message := sendWhatsAppMessage(client, messageStore, req.Recipient, req.Message, req.MediaPath)
 		sendMu.Unlock()
 		fmt.Println("Send request handled, success:", success)
 		// Set response headers
@@ -1043,7 +1073,9 @@ func runBridge() (exitCode int) {
 	}
 
 	// A socket or paired device ID alone does not prove authentication completed.
-	if !client.WaitForConnection(30*time.Second) || !client.IsLoggedIn() {
+	// Right after pairing, WhatsApp closes the connection and the client
+	// reconnects, so the state is polled instead of being checked once.
+	if !waitUntil(45*time.Second, func() bool { return client.IsConnected() && client.IsLoggedIn() }) {
 		fmt.Println("WHATSAPP_PHASE authentication-timeout")
 		return
 	}
@@ -1082,6 +1114,20 @@ func runBridge() (exitCode int) {
 	// Disconnect client
 	client.Disconnect()
 	return 0
+}
+
+// waitUntil polls ready until it reports true or the timeout passes.
+func waitUntil(timeout time.Duration, ready func() bool) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if ready() {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
 // logMessageBodies reports whether message text may be written to the log.

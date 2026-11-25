@@ -11,3 +11,5 @@ whatsapp-bridge/whatsapp-bridge
 __pycache__/
 .venv/
 .DS_Store
+# Local backups of the store
+whatsapp-bridge/store-backup-*/

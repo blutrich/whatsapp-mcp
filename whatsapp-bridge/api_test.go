@@ -20,7 +20,9 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
+	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"google.golang.org/protobuf/proto"
 )
 
 func freePort(t *testing.T) int {
@@ -229,5 +231,55 @@ func TestAPISendRateLimit(t *testing.T) {
 	status, body := api.post(t, "/api/send", send, nil)
 	if status != http.StatusTooManyRequests || !strings.Contains(body, "Send limit reached") {
 		t.Errorf("3rd send = %d %s, want 429", status, body)
+	}
+}
+
+func TestSentMessagesAreSavedToHistory(t *testing.T) {
+	api := startTestAPI(t)
+	chat := "972501234567@s.whatsapp.net"
+	sentAt := time.Date(2026, 11, 25, 17, 0, 0, 0, time.UTC)
+
+	// A text message to a chat that is not in the database yet.
+	text := &waProto.Message{Conversation: proto.String("hello")}
+	if err := recordSentMessage(api.store, chat, "Test Contact", "972500000009", "SENT1", sentAt, text, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	// A document with a caption.
+	doc := &waProto.Message{DocumentMessage: &waProto.DocumentMessage{
+		FileName: proto.String("report.pdf"), URL: proto.String("https://mmg.whatsapp.net/v/t62/x.enc"),
+		MediaKey: []byte{1}, FileSHA256: []byte{2}, FileEncSHA256: []byte{3}, FileLength: proto.Uint64(10),
+	}}
+	if err := recordSentMessage(api.store, chat, "Test Contact", "972500000009", "SENT2", sentAt.Add(time.Minute), doc, "see attached"); err != nil {
+		t.Fatal(err)
+	}
+	// Saving the same message twice must not create a second row.
+	if err := recordSentMessage(api.store, chat, "Test Contact", "972500000009", "SENT1", sentAt, text, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if err := recordSentMessage(api.store, chat, "Test Contact", "972500000009", "", sentAt, text, "hello"); err == nil {
+		t.Error("a message without an ID was saved")
+	}
+
+	var name string
+	if err := api.store.db.QueryRow("SELECT name FROM chats WHERE jid = ?", chat).Scan(&name); err != nil || name != "Test Contact" {
+		t.Fatalf("chat row: %q, %v", name, err)
+	}
+	rows, err := api.store.db.Query("SELECT id, sender, content, is_from_me, media_type, filename FROM messages WHERE chat_jid = ? ORDER BY timestamp", chat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var id, sender, content, mediaType, filename string
+		var fromMe bool
+		if err := rows.Scan(&id, &sender, &content, &fromMe, &mediaType, &filename); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, fmt.Sprintf("%s|%s|%s|%v|%s|%s", id, sender, content, fromMe, mediaType, filename))
+	}
+	want := []string{"SENT1|972500000009|hello|true||", "SENT2|972500000009|see attached|true|document|report.pdf"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("saved messages:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

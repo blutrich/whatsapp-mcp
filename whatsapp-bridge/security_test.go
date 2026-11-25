@@ -411,3 +411,29 @@ func TestSendLimiter(t *testing.T) {
 		t.Error("send refused after the window passed")
 	}
 }
+
+func TestDirectPathKeepsAccessSignature(t *testing.T) {
+	cases := map[string]string{
+		"https://mmg.whatsapp.net/v/t62.7118-24/1_2_n.enc?ccb=11-4&oh=01_AB&oe=6A&_nc_sid=5e03e0&mms3=true": "/v/t62.7118-24/1_2_n.enc?ccb=11-4&oh=01_AB&oe=6A&_nc_sid=5e03e0&mms3=true",
+		"https://mmg.whatsapp.net/o1/v/t24/f2/m233/AQ.enc?ccb=9-4&oh=01_X&oe=6B":                            "/o1/v/t24/f2/m233/AQ.enc?ccb=9-4&oh=01_X&oe=6B",
+		"https://media-tlv1-1.cdn.whatsapp.net/v/t62/1.enc?x=1":                                             "/v/t62/1.enc?x=1",
+		"https://mmg.whatsapp.net/v/t62/no-query.enc":                                                       "/v/t62/no-query.enc?",
+		"not a url": "not a url",
+	}
+	for in, want := range cases {
+		if got := extractDirectPathFromURL(in); got != want {
+			t.Errorf("extractDirectPathFromURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestWaitUntil(t *testing.T) {
+	// Becomes ready after a short while, as login does after pairing.
+	start := time.Now()
+	if !waitUntil(5*time.Second, func() bool { return time.Since(start) > 300*time.Millisecond }) {
+		t.Error("waitUntil gave up before the condition became true")
+	}
+	if waitUntil(300*time.Millisecond, func() bool { return false }) {
+		t.Error("waitUntil reported success for a condition that never became true")
+	}
+}

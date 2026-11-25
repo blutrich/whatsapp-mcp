@@ -57,13 +57,42 @@ WhatsApp ends linked-device sessions after a few weeks of the phone being offlin
 
 ### 3. Connect your AI client
 
+The MCP server is a standard stdio MCP server, so any client that can launch a local MCP server can use it. In every case the command is the same:
+
+```
+uv --directory /ABSOLUTE/PATH/TO/whatsapp-mcp/whatsapp-mcp-server run main.py
+```
+
+Find the paths with `which uv` and, inside the repository, `pwd`. If a client cannot find `uv`, use its absolute path as the command.
+
 **Claude Code**
 
 ```bash
 claude mcp add whatsapp -- uv --directory /ABSOLUTE/PATH/TO/whatsapp-mcp/whatsapp-mcp-server run main.py
 ```
 
-**Claude Desktop or Cursor.** Add this to `~/Library/Application Support/Claude/claude_desktop_config.json` (Claude Desktop) or `~/.cursor/mcp.json` (Cursor), then restart the app:
+**OpenAI Codex (CLI and IDE extension)**
+
+```bash
+codex mcp add whatsapp -- uv --directory /ABSOLUTE/PATH/TO/whatsapp-mcp/whatsapp-mcp-server run main.py
+```
+
+or add this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.whatsapp]
+command = "uv"
+args = ["--directory", "/ABSOLUTE/PATH/TO/whatsapp-mcp/whatsapp-mcp-server", "run", "main.py"]
+```
+
+**Claude Desktop, Cursor, Windsurf, Gemini CLI.** These share one JSON format. Add the block below to the client's MCP file, then restart the client:
+
+| Client | File |
+| --- | --- |
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Cursor | `~/.cursor/mcp.json` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
+| Gemini CLI | `~/.gemini/settings.json` |
 
 ```json
 {
@@ -81,7 +110,25 @@ claude mcp add whatsapp -- uv --directory /ABSOLUTE/PATH/TO/whatsapp-mcp/whatsap
 }
 ```
 
-Find the two paths with `which uv` and, inside the repository, `pwd`.
+**VS Code (GitHub Copilot agent mode).** Add to `.vscode/mcp.json` in your workspace:
+
+```json
+{
+  "servers": {
+    "whatsapp": {
+      "type": "stdio",
+      "command": "/ABSOLUTE/PATH/TO/uv",
+      "args": ["--directory", "/ABSOLUTE/PATH/TO/whatsapp-mcp/whatsapp-mcp-server", "run", "main.py"]
+    }
+  }
+}
+```
+
+**ChatGPT (the chat app).** ChatGPT connects only to remote MCP servers over the internet. This server is local on purpose, because it holds your private messages, so it is not exposed that way. Use Codex for OpenAI models.
+
+To pass a [setting](#settings) such as read-only mode, add it as an environment variable in the same place: `-e WHATSAPP_READ_ONLY=1` for `claude mcp add`, `--env WHATSAPP_READ_ONLY=1` for `codex mcp add`, or an `"env": {"WHATSAPP_READ_ONLY": "1"}` entry in the JSON.
+
+Only the Claude Code registration was run while preparing this README. The other clients' file locations follow their own documentation at the time of writing; check there if a path has moved.
 
 ### 4. Try it
 
@@ -101,7 +148,7 @@ On Windows the store folder is protected by your user profile's own access rules
 
 ## Instructions for coding agents
 
-This section is written for an AI coding agent (Claude Code, Cursor, Codex and similar) that a user has asked to install, check or change this project. `AGENTS.md` repeats the rules.
+This section is written for an AI coding agent (Claude Code, Codex, Cursor, Gemini CLI and similar) that a user has asked to install, check or change this project. `AGENTS.md` repeats the rules and is read automatically by Codex, Cursor and other agents that follow that convention; `CLAUDE.md` points Claude Code at the same file.
 
 ### Rules
 
@@ -307,7 +354,7 @@ The bridge connects to WhatsApp's servers only (`web.whatsapp.com` and WhatsApp'
 You should not have to trust this README. These commands let you, or a coding agent, verify it.
 
 ```bash
-# Tests: 17 Go tests and 29 Python tests, no WhatsApp account or network needed
+# Tests: 20 Go tests and 29 Python tests, no WhatsApp account or network needed
 cd whatsapp-bridge && go vet . && go test -count=1 -v .
 cd ../whatsapp-mcp-server && uv sync --frozen && uv run python -m unittest discover -s tests -v
 
@@ -404,6 +451,9 @@ Compared with the upstream project:
 - `get_message_context` could return context from the wrong chat when two chats contained the same message ID.
 - Senders stored in two different formats are both matched by sender filters.
 - Documents are sent with their file name and a correct type.
+- Right after a successful QR scan the bridge could exit with `authentication-timeout`, because it checked the login state once, during the reconnect that follows pairing. It now waits for login to complete.
+- `download_media` failed with HTTP 403 for every attachment, because the access signature was dropped from the media address. Downloads work again.
+- Messages sent through the bridge are saved to the local history. Before, they were missing from `list_messages`.
 - The MCP server never writes diagnostics into the protocol stream.
 - Errors such as "bridge not running" are reported as errors, not as empty results.
 
