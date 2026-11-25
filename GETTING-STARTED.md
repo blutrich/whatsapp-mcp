@@ -72,7 +72,8 @@ If you see your chats, you are done.
 ## Everyday use
 
 - **The bridge must be running.** It is the small program that keeps the connection to WhatsApp. If the assistant says it cannot reach WhatsApp, tell it: "Start the WhatsApp bridge."
-- **After restarting your computer,** ask the assistant to start the bridge again. You do not need to scan again.
+- **After restarting your computer,** ask the assistant to start the bridge again. You do not need to scan again. To make it start by itself at login, tell the assistant: "Run scripts/autostart.sh install."
+- **Extra safety for sending.** Tell the assistant: "Turn on WHATSAPP_CONFIRM_SENDS." From then on a window on your screen shows who a message is going to and what it says, and nothing is sent unless you click **Send** yourself.
 - **Sending.** The assistant shows you the message and the recipient and asks first. Read both before you approve.
 - **Files.** It will not send hidden files or its own data. Only ask it to send files you name yourself.
 

@@ -35,7 +35,7 @@ Severity is a judgement for a single-user computer running the bridge.
 
 | Limitation | What to do |
 | --- | --- |
-| **Prompt injection.** Anyone who can message you can put text in front of the assistant. Labelling and limits reduce the damage; nothing removes the risk. | Keep your client's approval prompt on for the send tools. Use `WHATSAPP_READ_ONLY=1` if you only read. Set `WHATSAPP_ALLOWED_RECIPIENTS`. |
+| **Prompt injection.** Anyone who can message you can put text in front of the assistant. Labelling and limits reduce the damage; nothing removes the risk. | Set `WHATSAPP_CONFIRM_SENDS=1` so every send needs your click in a desktop dialog, or keep your client's approval prompt on for the send tools. Use `WHATSAPP_READ_ONLY=1` if you only read. Set `WHATSAPP_ALLOWED_RECIPIENTS`. |
 | **Message content goes to the AI provider** whenever a tool returns it. That is how the assistant reads it. | Do not connect accounts whose content must not leave the computer. |
 | **Programs running as your user** can read the store folder and the API token. | Keep the computer free of untrusted software. |
 | **Databases are not encrypted at rest.** | Turn on full-disk encryption. |

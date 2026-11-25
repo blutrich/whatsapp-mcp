@@ -82,7 +82,7 @@
   <text x="636" y="570" font-size="12" fill="#6b6960">Names and messages here are invented.</text>
 
   <rect x="28" y="540" width="560" height="72" rx="10" fill="#eef4ef" stroke="#c9dccf"/>
-  <text x="44" y="566" font-size="13" font-weight="600" fill="#1c6b4a">12 tools</text>
-  <text x="44" y="586" font-size="12.5" fill="#3d3c38">search contacts and chats, read messages with context, download media,</text>
-  <text x="44" y="603" font-size="12.5" fill="#3d3c38">send text, files and voice notes</text>
+  <text x="44" y="566" font-size="13" font-weight="600" fill="#1c6b4a">14 tools</text>
+  <text x="44" y="586" font-size="12.5" fill="#3d3c38">one search across people, chats and messages, read with context,</text>
+  <text x="44" y="603" font-size="12.5" fill="#3d3c38">download media, send text, files and voice notes, check bridge status</text>
 </svg>

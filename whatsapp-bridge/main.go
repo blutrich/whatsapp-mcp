@@ -381,8 +381,9 @@ func sendWhatsAppMessage(client *whatsmeow.Client, messageStore *MessageStore, r
 		if ownID := client.Store.ID; ownID != nil {
 			ownUser = ownID.User
 		}
-		chatJID := recipientJID.String()
-		chatName := GetChatName(client, messageStore, recipientJID, chatJID, nil, "", nil)
+		historyJID := conversationJID(context.Background(), client, messageStore, recipientJID)
+		chatJID := historyJID.String()
+		chatName := GetChatName(client, messageStore, historyJID, chatJID, nil, "", nil)
 		if err := recordSentMessage(messageStore, chatJID, chatName, ownUser, string(resp.ID), resp.Timestamp, msg, message); err != nil {
 			fmt.Printf("Message sent, but it could not be saved to the local history: %v\n", err)
 		}
@@ -471,6 +472,10 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 	// Skip if there's no content and no media
 	if content == "" && mediaType == "" {
 		return
+	}
+
+	if !msg.Info.IsFromMe {
+		stats.recordReceived(msg.Info.Timestamp)
 	}
 
 	// Store message in database
@@ -741,6 +746,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	// One send at a time keeps message order predictable
 	var sendMu sync.Mutex
 	limiter := newSendLimiter()
+	stats.sendLimit = limiter.limit
 
 	// Handler for sending messages
 	mux.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
@@ -773,10 +779,36 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 			return
 		}
 
-		// Send the message
+		// Send the message (one at a time, including any approval dialog)
 		sendMu.Lock()
+		defer sendMu.Unlock()
+
+		if confirmSendsEnabled() {
+			summary, summaryErr := describeSend(r.Context(), client, messageStore, req)
+			if summaryErr != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(SendMessageResponse{Success: false, Message: summaryErr.Error()})
+				return
+			}
+			approved, askErr := approveSend(r.Context(), summary)
+			if askErr != nil || !approved {
+				reason := "The person at the computer did not approve this message, so it was not sent."
+				if askErr != nil {
+					reason = "Not sent: " + askErr.Error()
+				}
+				fmt.Println("Send request declined at the approval dialog")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(SendMessageResponse{Success: false, Message: reason})
+				return
+			}
+		}
+
 		success, message := sendWhatsAppMessage(client, messageStore, req.Recipient, req.Message, req.MediaPath)
-		sendMu.Unlock()
+		if success {
+			stats.recordSend()
+		}
 		fmt.Println("Send request handled, success:", success)
 		// Set response headers
 		w.Header().Set("Content-Type", "application/json")
@@ -838,13 +870,10 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 		})
 	})
 
-	// Report whether the bridge is connected and logged in
+	// Report the state of the bridge. Nothing here is secret or personal.
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]bool{
-			"connected": client.IsConnected(),
-			"logged_in": client.IsLoggedIn(),
-		})
+		json.NewEncoder(w).Encode(stats.snapshot(client.IsConnected(), client.IsLoggedIn()))
 	})
 
 	// Bind first, so a busy port is an error instead of a silent half-start
@@ -878,6 +907,26 @@ func main() {
 
 func runBridge() (exitCode int) {
 	exitCode = 1
+
+	// When started by a service manager the bridge moves to its own folder
+	// and opens its own log, so the service definition needs no file paths
+	// (macOS refuses those for protected folders such as Desktop).
+	if dir := os.Getenv("WHATSAPP_BRIDGE_DIR"); dir != "" {
+		if err := os.Chdir(dir); err != nil {
+			fmt.Fprintf(os.Stderr, "Cannot use WHATSAPP_BRIDGE_DIR: %v\n", err)
+			return
+		}
+	}
+	if logPath := os.Getenv("WHATSAPP_LOG_FILE"); logPath != "" {
+		logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Cannot open WHATSAPP_LOG_FILE: %v\n", err)
+			return
+		}
+		defer logFile.Close()
+		os.Stdout = logFile
+		os.Stderr = logFile
+	}
 	// Set up logger
 	logger := waLog.Stdout("Client", "INFO", true)
 	logger.Infof("Starting WhatsApp client...")
@@ -1118,6 +1167,14 @@ func runBridge() (exitCode int) {
 	}
 
 	fmt.Println("\n✓ Connected to WhatsApp!")
+
+	// Name chats that were stored with a number, and join conversations
+	// that were split between a phone number and a privacy identifier
+	if renamed, merged, repairErr := repairDirectChats(context.Background(), client, messageStore); repairErr != nil {
+		logger.Warnf("Could not tidy direct chats: %v", repairErr)
+	} else if renamed > 0 || merged > 0 {
+		logger.Infof("Tidied direct chats: %d named from contacts, %d split conversations joined", renamed, merged)
+	}
 	if pairedThisRun {
 		// Tell the person who just scanned the code that it worked
 		fmt.Println("WHATSAPP_PHASE paired")
@@ -1205,8 +1262,8 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 	// First, check if chat already exists in database with a name
 	var existingName string
 	err := messageStore.db.QueryRow("SELECT name FROM chats WHERE jid = ?", chatJID).Scan(&existingName)
-	if err == nil && existingName != "" {
-		// Chat exists with a name, use that
+	if err == nil && existingName != "" && !(isDirectChat(jid) && looksLikeNumber(existingName)) {
+		// Chat exists with a real name, use that
 		return existingName
 	}
 
@@ -1263,10 +1320,10 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 	} else {
 		// This is an individual contact
 
-		// Just use contact info (full name)
-		contact, err := client.Store.Contacts.GetContact(context.Background(), jid)
-		if err == nil && contact.FullName != "" {
-			name = contact.FullName
+		// Saved contact name, looked up under the phone number and under
+		// the privacy identifier (@lid), whichever WhatsApp used for this chat
+		if contactName := bestContactName(context.Background(), client, jid); contactName != "" {
+			name = contactName
 		} else if sender != "" {
 			// Fallback to sender
 			name = sender
@@ -1274,7 +1331,6 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 			// Last fallback to JID
 			name = jid.User
 		}
-
 	}
 
 	return name

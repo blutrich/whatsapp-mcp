@@ -142,6 +142,16 @@ Only the Claude Code registration was run while preparing this README. The other
 
 Ask your assistant: *"List my five most recent WhatsApp chats."*
 
+### 5. Start the bridge automatically (optional)
+
+```bash
+scripts/autostart.sh install     # start now and at every login
+scripts/autostart.sh status
+scripts/autostart.sh uninstall   # your data is kept
+```
+
+This registers a per-user service (a LaunchAgent on macOS, a systemd user service on Linux). Nothing is installed system-wide. If the phone has unlinked the device, the QR page opens in your browser at login. To pass [settings](#settings), put them in `whatsapp-bridge/bridge.env`, one `NAME=value` per line, and run `install` again.
+
 ### Windows
 
 `go-sqlite3` needs cgo, which is off by default on Windows. Install a C compiler with [MSYS2](https://www.msys2.org/) (add `ucrt64\bin` to `PATH`), then:
@@ -240,6 +250,9 @@ Then call a read-only tool such as `list_chats` through the MCP client. Do not v
 | --- | --- |
 | `whatsapp-bridge/main.go` | WhatsApp connection, pairing, message storage, send and download |
 | `whatsapp-bridge/security.go` | API token, request screening, recipient and file policy, safe paths, send limit |
+| `whatsapp-bridge/contacts.go` | Contact names and one conversation per person across phone-number and identifier addresses |
+| `whatsapp-bridge/confirm.go` | Optional approval dialog before sending |
+| `whatsapp-bridge/status.go` | Status report behind `bridge_status` |
 | `whatsapp-bridge/notify.go` | Desktop notifications for pairing, unlinking and QR timeout |
 | `whatsapp-bridge/pairpage.go` | Optional browser page that shows the pairing QR |
 | `whatsapp-bridge/*_test.go` | Unit tests and real-HTTP tests of the local API |
@@ -247,6 +260,7 @@ Then call a read-only tool such as `list_chats` through the MCP client. Do not v
 | `whatsapp-mcp-server/whatsapp.py` | Read-only database queries and calls to the bridge API |
 | `whatsapp-mcp-server/audio.py` | FFmpeg conversion for voice notes |
 | `whatsapp-mcp-server/tests/` | Server tests against a made-up database and a fake bridge |
+| `scripts/autostart.sh` | Registers the bridge to start at login (macOS, Linux) |
 | `whatsapp-bridge/store/` | **Private runtime data. Git-ignored. Do not touch** |
 
 ### Changing the code
@@ -261,7 +275,9 @@ Then call a read-only tool such as `list_chats` through the MCP client. Do not v
 
 | Tool | What it does |
 | --- | --- |
-| `search_contacts` | Find contacts by name or phone number |
+| `search` | One search across people, chats and messages. Finds people in your whole address book by any name or phone number, ranks the best match first, and can narrow messages to one chat, a date range, or only what you sent |
+| `bridge_status` | Whether the bridge is running and linked, when the last message arrived, and which safety settings are on |
+| `search_contacts` | Find contacts in your address book by name or phone number |
 | `list_chats` | List chats, newest first or by name |
 | `get_chat` | Details of one chat by JID |
 | `get_direct_chat_by_contact` | The one-to-one chat with a phone number (exact match) |
@@ -278,7 +294,7 @@ Phone numbers are written with the country code and no `+`, for example `9725012
 
 Downloaded media is saved as `whatsapp-bridge/store/<chat>/<message id>_<file name>`.
 
-Some contacts appear with an address ending in `@lid`. That is WhatsApp's privacy identifier, not a phone number; `search_contacts` shows the phone number when the bridge knows it.
+Some contacts are addressed by WhatsApp with a privacy identifier ending in `@lid` instead of a phone number. The bridge names those chats from your address book, keeps one conversation per person whichever address WhatsApp uses, and `search` shows the phone number when it is known. A chat keeps a number as its name only when the person is not in your contacts.
 
 ## Settings
 
@@ -288,6 +304,7 @@ All settings are environment variables. None are required.
 
 | Variable | Default | Effect |
 | --- | --- | --- |
+| `WHATSAPP_CONFIRM_SENDS` | unset | Set to `1` to get a desktop dialog showing the recipient and the content before every send. Nothing is sent unless you click **Send**; closing it, the other button, or 60 seconds without an answer means no. macOS, and Linux with `zenity`; elsewhere sends are refused while it is on |
 | `WHATSAPP_ALLOWED_RECIPIENTS` | unset (anyone) | Comma-separated phone numbers or JIDs. When set, the bridge refuses to send to anyone else. A bad entry stops the bridge from starting |
 | `WHATSAPP_MEDIA_ROOTS` | unset | Folders (separated like `PATH`) that outgoing files may come from. When set, files elsewhere are refused |
 | `WHATSAPP_MAX_SENDS_PER_MINUTE` | `30` | Upper limit on sends per minute |
@@ -297,6 +314,7 @@ All settings are environment variables. None are required.
 | `WHATSAPP_QR_OUTPUT` | unset | Path prefix. Saves the pairing QR as `<prefix>-<number>.png` instead of drawing it in the terminal |
 | `WHATSAPP_LOG_MESSAGES` | unset | Set to `1` to include message text in the bridge log |
 | `WHATSAPP_NOTIFY` | on | Set to `0` to turn off desktop notifications |
+| `WHATSAPP_BRIDGE_DIR`, `WHATSAPP_LOG_FILE` | unset | Folder to run in and file to log to. Set by `scripts/autostart.sh`; you rarely need them yourself |
 
 **MCP server** (set them in your client's MCP configuration, under `env`)
 
@@ -330,6 +348,7 @@ WHATSAPP_ALLOWED_RECIPIENTS="972501234567,120363041234567890@g.us" go run .
 | Another device on your network uses the API | The API listens on `127.0.0.1` only |
 | Another user account on your computer reads your messages | The store folder is `700` and its files `600`, re-applied at every start |
 | A tricked assistant sends your private files to someone | The bridge refuses its own store folder (session keys, history, token), hidden files and folders such as `~/.ssh` and `.env`, symbolic links that lead to them, and anything that is not a regular file. `WHATSAPP_MEDIA_ROOTS` narrows this to folders you choose |
+| A tricked assistant sends something you never asked for | `WHATSAPP_CONFIRM_SENDS=1` shows the recipient and content in a desktop dialog and sends only when you click **Send**. This check does not depend on the AI client |
 | A tricked assistant messages people it should not | `WHATSAPP_ALLOWED_RECIPIENTS` restricts recipients. `WHATSAPP_READ_ONLY=1` removes sending. Recipients must be a phone number or a user or group JID |
 | A runaway assistant floods your contacts | 30 sends a minute by default |
 | A sender names an attachment `../../something` to write outside the store | File names from senders are reduced to a plain name and saved as `store/<chat>/<message id>_<name>`. The final path is checked to be inside the store. Files are saved without execute permission |
@@ -347,7 +366,7 @@ WHATSAPP_ALLOWED_RECIPIENTS="972501234567,120363041234567890@g.us" go run .
 | LLM03 Supply chain | Go and Python dependencies | Versions pinned with checksums (`go.sum`, `uv.lock`). `govulncheck` and `pip-audit` report no known vulnerabilities in the dependencies at the time of the last commit. The MCP server's only direct dependency is the `mcp` package |
 | LLM04 Data and model poisoning | No model is trained. The message database can contain hostile text | Treated as untrusted data (LLM01) |
 | LLM05 Improper output handling | Tool output goes to the assistant; file names go to the file system | Control characters stripped, file names sanitised, LIKE wildcards escaped, all SQL parameterised |
-| LLM06 Excessive agency | The assistant can send messages and files as you | Read-only mode, recipient allowlist, folder allowlist, file policy, send limit. Your MCP client's per-tool approval is the final check: keep it on for the send tools |
+| LLM06 Excessive agency | The assistant can send messages and files as you | Approval dialog before sending (`WHATSAPP_CONFIRM_SENDS`), read-only mode, recipient allowlist, folder allowlist, file policy, send limit. Your MCP client's per-tool approval is the final check: keep it on for the send tools |
 | LLM07 System prompt leakage | The server instructions contain no secrets | Not applicable |
 | LLM08 Vector and embedding weaknesses | No embeddings are used | Not applicable |
 | LLM09 Misinformation | Wrong attribution would mislead the assistant | Sender names resolve by exact match only, each chat appears once, ordering and date filters are correct across time-zone changes |
@@ -355,7 +374,7 @@ WHATSAPP_ALLOWED_RECIPIENTS="972501234567,120363041234567890@g.us" go run .
 
 ### What is not protected
 
-- **Prompt injection cannot be ruled out.** If the assistant reads a hostile message and you have allowed it to send without asking, it may send something you did not intend, within the limits above. Keep approval prompts on for the send tools.
+- **Prompt injection cannot be ruled out.** If the assistant reads a hostile message and you have allowed it to send without asking, it may send something you did not intend, within the limits above. Turn on `WHATSAPP_CONFIRM_SENDS=1`, or keep your client's approval prompts on for the send tools.
 - **Programs running as your own user account** can read the store folder and the token. This project does not defend against malware already running as you.
 - **The databases are not encrypted.** Use full-disk encryption (FileVault, BitLocker, LUKS).
 - **Non-hidden files are sendable by default.** Set `WHATSAPP_MEDIA_ROOTS` to restrict outgoing files to one folder.
@@ -371,7 +390,7 @@ The bridge connects to WhatsApp's servers only (`web.whatsapp.com` and WhatsApp'
 You should not have to trust this README. These commands let you, or a coding agent, verify it.
 
 ```bash
-# Tests: 24 Go tests and 29 Python tests, no WhatsApp account or network needed
+# Tests: 32 Go tests and 40 Python tests, no WhatsApp account or network needed
 cd whatsapp-bridge && go vet . && go test -count=1 -v .
 cd ../whatsapp-mcp-server && uv sync --frozen && uv run python -m unittest discover -s tests -v
 
@@ -391,7 +410,7 @@ cd .. && grep -rnE 'https?://' --include='*.go' --include='*.py' whatsapp-bridge
 
 `govulncheck` also reports problems in the Go standard library of the Go version you have installed. If it does, update Go to the latest patch release and rebuild.
 
-The source is small enough to read: about 2,000 lines of Go and 1,200 lines of Python, excluding tests.
+The source is small enough to read: about 2,800 lines of Go and 1,600 lines of Python, excluding tests.
 
 ## Upgrading from an older copy
 
@@ -460,6 +479,13 @@ Compared with the upstream project:
 - The MCP server opens the databases read-only and no longer creates an empty database when the bridge has not run.
 - Dependencies updated to versions without known vulnerabilities; two direct Python dependencies removed.
 
+**New**
+
+- `search`: one ranked search across people, chats and messages, including contacts you have never chatted with.
+- `bridge_status`: is it running, is it linked, which safety settings are on.
+- Approval dialog before sending (`WHATSAPP_CONFIRM_SENDS=1`).
+- Browser pairing page, desktop notifications, and start at login (`scripts/autostart.sh`).
+
 **Correctness**
 
 - Downloading an attachment could return a different attachment that happened to be received in the same second. Saved files now include the message ID.
@@ -471,6 +497,7 @@ Compared with the upstream project:
 - Documents are sent with their file name and a correct type.
 - Right after a successful QR scan the bridge could exit with `authentication-timeout`, because it checked the login state once, during the reconnect that follows pairing. It now waits for login to complete.
 - `download_media` failed with HTTP 403 for every attachment, because the access signature was dropped from the media address. Downloads work again.
+- Chats that WhatsApp addresses by privacy identifier were stored with a number for a name, so contacts could not be found by name, and a message sent by phone number started a second chat for the same person. Chats are now named from the address book, existing ones are repaired at startup, and each person has one conversation.
 - Messages sent through the bridge are saved to the local history. Before, they were missing from `list_messages`.
 - The MCP server never writes diagnostics into the protocol stream.
 - Errors such as "bridge not running" are reported as errors, not as empty results.
