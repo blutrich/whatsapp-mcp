@@ -4,7 +4,11 @@ Connect your personal WhatsApp account to an AI assistant (Claude Code, Claude D
 
 Everything runs on your own computer. Your messages are stored in a local SQLite database and reach the AI model only when the assistant calls one of the tools below.
 
-![WhatsApp MCP](./example-use.png)
+![Example session: the assistant finds a message, proposes a reply, and sends it after the user confirms](./docs/example-session.svg)
+
+*Illustration with made-up names and messages.*
+
+> **Not a developer?** Start with the plain-language guide: [GETTING-STARTED.md](./GETTING-STARTED.md).
 
 > **This is a hardened fork of [lharries/whatsapp-mcp](https://github.com/lharries/whatsapp-mcp).** It fixes login with current WhatsApp and closes the security holes listed in [What this fork changes](#what-this-fork-changes). It is built on [whatsmeow](https://github.com/tulir/whatsmeow), an unofficial implementation of the WhatsApp Web protocol.
 
@@ -15,7 +19,7 @@ Everything runs on your own computer. Your messages are stored in a local SQLite
 - [Instructions for coding agents](#instructions-for-coding-agents)
 - [Tools](#tools)
 - [Settings](#settings)
-- [Security](#security)
+- [Security](#security) (full list of issues in [SECURITY.md](./SECURITY.md))
 - [How to check this repository yourself](#how-to-check-this-repository-yourself)
 - [Upgrading from an older copy](#upgrading-from-an-older-copy)
 - [How it works](#how-it-works)
@@ -50,6 +54,8 @@ go run .
 ```
 
 The first run prints a QR code. On your phone open **WhatsApp > Settings > Linked devices > Link a device** and scan it. You have about three minutes.
+
+If the code is hard to scan in your terminal, start the bridge with `WHATSAPP_QR_PAGE=1 go run .` and it opens in your browser instead.
 
 When the scan succeeds you get a desktop notification, "WhatsApp linked" (macOS, and Linux with `notify-send`). You also get one if the phone later removes this device, or if nobody scans the code in time.
 
@@ -181,9 +187,9 @@ cd ../whatsapp-mcp-server
 uv sync --frozen
 uv run python -m unittest discover -s tests   # expect: OK
 
-# 4. Start the bridge for pairing (the human scans the QR)
+# 4. Start the bridge for pairing (the human scans the QR in their browser)
 cd ../whatsapp-bridge
-WHATSAPP_QR_OUTPUT=/tmp/whatsapp-qr ./whatsapp-bridge
+WHATSAPP_QR_PAGE=1 ./whatsapp-bridge
 ```
 
 If step 2 fails on macOS with `tapi error: malformed file ... unknown architecture`, the installed linker cannot read the newest SDK. Build against an older one:
@@ -199,6 +205,7 @@ The bridge reports progress on stdout with machine-readable lines:
 | --- | --- |
 | `WHATSAPP_PHASE refreshing-client-version` / `client-version-current` | Fetched the current WhatsApp Web version |
 | `WHATSAPP_PHASE connecting` / `transport-connected` | Socket to WhatsApp is open |
+| `PAIRING_PAGE_READY <path>/index.html` | A pairing page was opened in the user's browser (only with `WHATSAPP_QR_PAGE=1`). Easiest option when you start the bridge for a user |
 | `PAIRING_QR_READY <path>.png` | A QR image was written (only with `WHATSAPP_QR_OUTPUT`). Show it to the user. A new one replaces it about every 20 seconds |
 | `WHATSAPP_PHASE qr-timeout` | Nobody scanned in time. Exit code 1. Start again |
 | `WHATSAPP_PHASE authenticated` | Logged in |
@@ -206,7 +213,8 @@ The bridge reports progress on stdout with machine-readable lines:
 | `WHATSAPP_PHASE api-ready` | Local API is listening. The MCP server can be used now |
 | `WHATSAPP_PHASE api-listen-failed` | The port is taken, usually by another bridge. Exit code 1 |
 | `WHATSAPP_PHASE version-refresh-failed`, `connect-failed`, `authentication-timeout`, `pairing-failed` | Could not reach or log in to WhatsApp. Exit code 1 |
-| `WHATSAPP_PHASE logged-out` | The phone removed this linked device. Delete `store/whatsapp.db` and pair again |
+| `WHATSAPP_PHASE logged-out` | The phone removed this linked device. The bridge exits with code 1. Start it again to pair; the message history is kept |
+| `WHATSAPP_PHASE pairing-cancelled` | The bridge was stopped while waiting for a scan |
 
 Then register the MCP server with the user's client (see [Connect your AI client](#3-connect-your-ai-client)) using absolute paths.
 
@@ -233,6 +241,7 @@ Then call a read-only tool such as `list_chats` through the MCP client. Do not v
 | `whatsapp-bridge/main.go` | WhatsApp connection, pairing, message storage, send and download |
 | `whatsapp-bridge/security.go` | API token, request screening, recipient and file policy, safe paths, send limit |
 | `whatsapp-bridge/notify.go` | Desktop notifications for pairing, unlinking and QR timeout |
+| `whatsapp-bridge/pairpage.go` | Optional browser page that shows the pairing QR |
 | `whatsapp-bridge/*_test.go` | Unit tests and real-HTTP tests of the local API |
 | `whatsapp-mcp-server/main.py` | MCP tool definitions and the safety instructions sent to the assistant |
 | `whatsapp-mcp-server/whatsapp.py` | Read-only database queries and calls to the bridge API |
@@ -284,6 +293,7 @@ All settings are environment variables. None are required.
 | `WHATSAPP_MAX_SENDS_PER_MINUTE` | `30` | Upper limit on sends per minute |
 | `WHATSAPP_MAX_MEDIA_MB` | `100` | Largest file that may be sent or downloaded |
 | `WHATSAPP_BRIDGE_PORT` | `8080` | Port of the local API (always on `127.0.0.1`) |
+| `WHATSAPP_QR_PAGE` | unset | Set to `1` to show the pairing QR on a self-refreshing page in your browser instead of the terminal (macOS, and Linux with `xdg-open`). The page is removed when pairing ends |
 | `WHATSAPP_QR_OUTPUT` | unset | Path prefix. Saves the pairing QR as `<prefix>-<number>.png` instead of drawing it in the terminal |
 | `WHATSAPP_LOG_MESSAGES` | unset | Set to `1` to include message text in the bridge log |
 | `WHATSAPP_NOTIFY` | on | Set to `0` to turn off desktop notifications |
@@ -311,6 +321,8 @@ WHATSAPP_ALLOWED_RECIPIENTS="972501234567,120363041234567890@g.us" go run .
 ## Security
 
 ### What is protected, and how
+
+[SECURITY.md](./SECURITY.md) lists every security issue found in this code, whether it is fixed, and how to report a new one.
 
 | Risk | Protection |
 | --- | --- |
@@ -359,7 +371,7 @@ The bridge connects to WhatsApp's servers only (`web.whatsapp.com` and WhatsApp'
 You should not have to trust this README. These commands let you, or a coding agent, verify it.
 
 ```bash
-# Tests: 21 Go tests and 29 Python tests, no WhatsApp account or network needed
+# Tests: 24 Go tests and 29 Python tests, no WhatsApp account or network needed
 cd whatsapp-bridge && go vet . && go test -count=1 -v .
 cd ../whatsapp-mcp-server && uv sync --frozen && uv run python -m unittest discover -s tests -v
 
@@ -417,11 +429,12 @@ Only media metadata is stored at first. `download_media` fetches the file itself
 | "This recipient is not in WHATSAPP_ALLOWED_RECIPIENTS" | Add the number or JID to the list and restart the bridge |
 | "Send limit reached" | Wait a minute, or raise `WHATSAPP_MAX_SENDS_PER_MINUTE` |
 | macOS build fails with `tapi error: malformed file` | See the `SDKROOT` note in the [install runbook](#install-runbook), or update the Command Line Tools |
-| The QR code does not display | Use `WHATSAPP_QR_OUTPUT=/tmp/whatsapp-qr` and open the PNG it reports |
+| The QR code does not display | Start the bridge with `WHATSAPP_QR_PAGE=1` to see it in your browser |
 | `qr-timeout` | The code was not scanned within about three minutes. Start the bridge again |
 | Device limit reached | Remove a linked device in WhatsApp on your phone (Settings > Linked devices) |
 | No messages after pairing | History can take several minutes to arrive |
-| Messages out of sync, or `logged-out` | Stop the bridge, delete `whatsapp-bridge/store/messages.db` and `whatsapp-bridge/store/whatsapp.db`, start it and pair again |
+| `logged-out`, or you removed the device on your phone | Start the bridge again and scan the new QR code. Your saved history is kept |
+| Messages out of sync | Stop the bridge, delete `whatsapp-bridge/store/messages.db` and `whatsapp-bridge/store/whatsapp.db`, start it and pair again |
 | Voice note fails to convert | Install FFmpeg, or send the file with `send_file` |
 | `uv` not found by the AI client | Use the absolute path from `which uv` in the client configuration |
 

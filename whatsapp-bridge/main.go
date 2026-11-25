@@ -418,19 +418,19 @@ func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, 
 
 	// Check for image message
 	if img := msg.GetImageMessage(); img != nil {
-		return "image", "image_" + time.Now().Format("20060102_150405") + ".jpg",
+		return "image", "image_" + time.Now().Format("20060102_150405") + mediaExtension(img.GetMimetype(), ".jpg"),
 			img.GetURL(), img.GetMediaKey(), img.GetFileSHA256(), img.GetFileEncSHA256(), img.GetFileLength()
 	}
 
 	// Check for video message
 	if vid := msg.GetVideoMessage(); vid != nil {
-		return "video", "video_" + time.Now().Format("20060102_150405") + ".mp4",
+		return "video", "video_" + time.Now().Format("20060102_150405") + mediaExtension(vid.GetMimetype(), ".mp4"),
 			vid.GetURL(), vid.GetMediaKey(), vid.GetFileSHA256(), vid.GetFileEncSHA256(), vid.GetFileLength()
 	}
 
 	// Check for audio message
 	if aud := msg.GetAudioMessage(); aud != nil {
-		return "audio", "audio_" + time.Now().Format("20060102_150405") + ".ogg",
+		return "audio", "audio_" + time.Now().Format("20060102_150405") + mediaExtension(aud.GetMimetype(), ".ogg"),
 			aud.GetURL(), aud.GetMediaKey(), aud.GetFileSHA256(), aud.GetFileEncSHA256(), aud.GetFileLength()
 	}
 
@@ -970,6 +970,9 @@ func runBridge() (exitCode int) {
 		return
 	}
 
+	// Signalled when the phone removes this linked device
+	loggedOut := make(chan struct{}, 1)
+
 	// Setup event handling for messages and history sync
 	client.AddEventHandler(func(evt interface{}) {
 		switch v := evt.(type) {
@@ -988,7 +991,11 @@ func runBridge() (exitCode int) {
 		case *events.LoggedOut:
 			fmt.Println("WHATSAPP_PHASE logged-out")
 			notifyDesktop(noticeUnlinked, runtime.GOOS)
-			logger.Warnf("Device logged out. Stop the bridge, delete store/whatsapp.db and start it again to scan a new QR code")
+			select {
+			case loggedOut <- struct{}{}:
+			default:
+			}
+			logger.Warnf("This device was removed from the WhatsApp account. Start the bridge again to scan a new QR code")
 		}
 	})
 
@@ -1019,9 +1026,28 @@ func runBridge() (exitCode int) {
 		}
 		defer removeQRFile()
 
+		// WHATSAPP_QR_PAGE=1 shows the code on a local page in the browser
+		var page *pairingPage
+		if os.Getenv("WHATSAPP_QR_PAGE") == "1" {
+			if page, err = newPairingPage(); err != nil {
+				fmt.Println("WHATSAPP_PHASE qr-page-failed")
+				page = nil
+			}
+		}
+		defer page.close()
+
+		// Ctrl+C or a stop request during pairing must still clean up the
+		// QR image and the pairing page, so it is handled here.
+		interrupted := make(chan os.Signal, 1)
+		signal.Notify(interrupted, syscall.SIGINT, syscall.SIGTERM)
+		defer signal.Stop(interrupted)
+
 	pairing:
 		for {
 			select {
+			case <-interrupted:
+				fmt.Println("WHATSAPP_PHASE pairing-cancelled")
+				return
 			case <-qrContext.Done():
 				fmt.Println("WHATSAPP_PHASE qr-timeout")
 				return
@@ -1034,7 +1060,12 @@ func runBridge() (exitCode int) {
 				switch evt.Event {
 				case "code":
 					fmt.Println("\nScan this QR code with your WhatsApp app:")
-					if prefix := os.Getenv("WHATSAPP_QR_OUTPUT"); prefix != "" {
+					if page != nil {
+						if showErr := page.show(evt.Code); showErr != nil {
+							fmt.Println("WHATSAPP_PHASE qr-page-failed")
+							return
+						}
+					} else if prefix := os.Getenv("WHATSAPP_QR_OUTPUT"); prefix != "" {
 						code, encodeErr := qr.Encode(evt.Code, qr.L)
 						if encodeErr != nil {
 							fmt.Println("WHATSAPP_PHASE qr-encode-failed")
@@ -1054,6 +1085,7 @@ func runBridge() (exitCode int) {
 					}
 				case "success":
 					removeQRFile()
+					page.close()
 					pairedThisRun = true
 					break pairing
 				case "err-scanned-without-multidevice":
@@ -1114,8 +1146,16 @@ func runBridge() (exitCode int) {
 
 	fmt.Println("REST server is running. Press Ctrl+C to disconnect and exit.")
 
-	// Wait for termination signal
-	<-exitChan
+	// Wait for a termination signal, or for the phone to unlink this device
+	unlinked := false
+	select {
+	case <-exitChan:
+	case <-loggedOut:
+		// Without a session the bridge can do nothing useful. Exiting makes
+		// that visible; the next start shows a new QR code.
+		unlinked = true
+		time.Sleep(time.Second) // let the notification go out
+	}
 
 	fmt.Println("Disconnecting...")
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1123,6 +1163,9 @@ func runBridge() (exitCode int) {
 	server.Shutdown(shutdownCtx)
 	// Disconnect client
 	client.Disconnect()
+	if unlinked {
+		return 1
+	}
 	return 0
 }
 

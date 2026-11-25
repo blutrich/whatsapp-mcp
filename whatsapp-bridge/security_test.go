@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"errors"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -465,4 +467,76 @@ func TestNotificationCommand(t *testing.T) {
 	}
 	t.Setenv("WHATSAPP_NOTIFY", "0")
 	notifyDesktop(noticePaired, "darwin") // must be a no-op, not a popup during tests
+}
+
+func TestMediaExtension(t *testing.T) {
+	cases := map[string]string{
+		"image/png":              ".png",
+		"image/jpeg":             ".jpg",
+		"IMAGE/WEBP":             ".webp",
+		"audio/ogg; codecs=opus": ".ogg",
+		"":                       ".jpg",
+		"application/x-sh":       ".jpg",
+		"image/../../evil":       ".jpg",
+	}
+	for mimeType, want := range cases {
+		if got := mediaExtension(mimeType, ".jpg"); got != want {
+			t.Errorf("mediaExtension(%q) = %q, want %q", mimeType, got, want)
+		}
+	}
+}
+
+func TestPairingPage(t *testing.T) {
+	page, err := newPairingPage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var openedPaths []string
+	page.open = func(path string) { openedPaths = append(openedPaths, path) }
+
+	for _, code := range []string{"2@first-code,abc,def", "2@second-code,abc,def"} {
+		if err := page.show(code); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(openedPaths) != 1 || filepath.Base(openedPaths[0]) != "index.html" {
+		t.Errorf("page opened %v, want once", openedPaths)
+	}
+	data, err := os.ReadFile(filepath.Join(page.dir, "qr.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := png.Decode(bytes.NewReader(data)); err != nil {
+		t.Errorf("QR image is not a valid PNG: %v", err)
+	}
+	for _, name := range []string{".", "index.html", "qr.png"} {
+		info, err := os.Stat(filepath.Join(page.dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm()&0o077 != 0 {
+			t.Errorf("%s is readable by other users: %o", name, info.Mode().Perm())
+		}
+	}
+	entries, _ := os.ReadDir(page.dir)
+	if len(entries) != 2 {
+		t.Errorf("unexpected files in the pairing folder: %v", entries)
+	}
+	dir := page.dir
+	page.close()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Error("pairing folder was not removed")
+	}
+	var none *pairingPage
+	none.close() // closing a page that was never created must be safe
+}
+
+func TestPairingPageHasNoExternalResources(t *testing.T) {
+	// The page is opened from a local file next to a live pairing code:
+	// it must not load anything from the network.
+	for _, marker := range []string{"http://", "https://", "//cdn", "<link", "@import", "fetch(", "XMLHttpRequest"} {
+		if strings.Contains(pairingPageHTML, marker) {
+			t.Errorf("pairing page contains %q", marker)
+		}
+	}
 }

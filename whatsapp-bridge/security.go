@@ -444,3 +444,21 @@ func (l *sendLimiter) allow(now time.Time) bool {
 
 // allowedRecipients is set once at startup from WHATSAPP_ALLOWED_RECIPIENTS.
 var allowedRecipients []types.JID
+
+// Extensions for the media types WhatsApp sends without a file name.
+var mediaExtensions = map[string]string{
+	"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif",
+	"video/mp4": ".mp4", "video/quicktime": ".mov", "video/3gpp": ".3gp", "video/webm": ".webm",
+	"audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "audio/aac": ".aac", "audio/wav": ".wav",
+}
+
+// mediaExtension returns the file extension for a MIME type reported by a
+// sender, or fallback when it is unknown. Only values from the table above
+// are ever returned, so a sender cannot choose an arbitrary extension.
+func mediaExtension(mimeType, fallback string) string {
+	base := strings.ToLower(strings.TrimSpace(strings.SplitN(mimeType, ";", 2)[0]))
+	if ext, ok := mediaExtensions[base]; ok {
+		return ext
+	}
+	return fallback
+}

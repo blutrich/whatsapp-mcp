@@ -9,8 +9,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"time"
 )
+
+// runtimeGOOS is the operating system the bridge is running on.
+var runtimeGOOS = runtime.GOOS
 
 type notice struct {
 	title string

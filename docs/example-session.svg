@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" width="960" height="640" role="img" aria-labelledby="t d" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title id="t">Example session with the WhatsApp MCP server</title>
+  <desc id="d">Illustration with made-up data. A person asks an assistant to find a message about an invoice and reply. The assistant calls search_contacts, list_messages and, after the person confirms, send_message.</desc>
+  <rect width="960" height="640" rx="14" fill="#f6f5f1"/>
+  <rect x="0.5" y="0.5" width="959" height="639" rx="14" fill="none" stroke="#d9d6cc"/>
+  <rect width="960" height="52" rx="14" fill="#ebe8df"/>
+  <rect y="38" width="960" height="14" fill="#ebe8df"/>
+  <circle cx="26" cy="26" r="6" fill="#e0685a"/><circle cx="46" cy="26" r="6" fill="#e3b341"/><circle cx="66" cy="26" r="6" fill="#57b560"/>
+  <text x="96" y="31" font-size="15" font-weight="600" fill="#2b2a27">WhatsApp MCP: example session</text>
+  <text x="936" y="31" font-size="12" fill="#6b6960" text-anchor="end">Illustration with made-up data</text>
+
+  <!-- left column: conversation -->
+  <rect x="28" y="76" width="560" height="50" rx="10" fill="#e4e1d6"/>
+  <text x="44" y="97" font-size="12" font-weight="600" fill="#6b6960">YOU</text>
+  <text x="44" y="116" font-size="14" fill="#1f1e1c">Find what Dana said about the invoice, and reply that I'll pay tomorrow.</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5">
+    <rect x="28" y="140" width="560" height="34" rx="8" fill="#ffffff" stroke="#d9d6cc"/>
+    <text x="44" y="162" fill="#1c6b4a" font-weight="700">search_contacts</text>
+    <text x="170" y="162" fill="#3d3c38">query: "Dana"</text>
+    <text x="572" y="162" fill="#6b6960" text-anchor="end">1 contact</text>
+
+    <rect x="28" y="182" width="560" height="34" rx="8" fill="#ffffff" stroke="#d9d6cc"/>
+    <text x="44" y="204" fill="#1c6b4a" font-weight="700">list_messages</text>
+    <text x="170" y="204" fill="#3d3c38">chat: Dana, query: "invoice"</text>
+    <text x="572" y="204" fill="#6b6960" text-anchor="end">2 messages</text>
+  </g>
+
+  <text x="44" y="246" font-size="12" font-weight="600" fill="#6b6960">ASSISTANT</text>
+  <text x="44" y="268" font-size="14" fill="#1f1e1c">Dana wrote yesterday at 18:42:</text>
+  <rect x="44" y="280" width="3" height="26" fill="#1c6b4a"/>
+  <text x="58" y="298" font-size="14" fill="#1f1e1c" font-style="italic">"Can you settle the invoice this week?"</text>
+  <text x="44" y="332" font-size="14" fill="#1f1e1c">I'd reply: "Will pay tomorrow." Send it to Dana?</text>
+
+  <rect x="28" y="352" width="560" height="50" rx="10" fill="#e4e1d6"/>
+  <text x="44" y="373" font-size="12" font-weight="600" fill="#6b6960">YOU</text>
+  <text x="44" y="392" font-size="14" fill="#1f1e1c">Yes, send it.</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5">
+    <rect x="28" y="416" width="560" height="34" rx="8" fill="#ffffff" stroke="#d9d6cc"/>
+    <text x="44" y="438" fill="#1c6b4a" font-weight="700">send_message</text>
+    <text x="170" y="438" fill="#3d3c38">to: Dana, "Will pay tomorrow."</text>
+    <text x="572" y="438" fill="#6b6960" text-anchor="end">sent</text>
+  </g>
+
+  <text x="44" y="480" font-size="12" font-weight="600" fill="#6b6960">ASSISTANT</text>
+  <text x="44" y="502" font-size="14" fill="#1f1e1c">Sent. The reply is saved in your local history too.</text>
+
+  <!-- right column: what happens underneath -->
+  <rect x="616" y="76" width="316" height="536" rx="10" fill="#ffffff" stroke="#d9d6cc"/>
+  <text x="636" y="106" font-size="14" font-weight="700" fill="#1f1e1c">What happens underneath</text>
+
+  <g font-size="13" fill="#3d3c38">
+    <circle cx="644" cy="140" r="9" fill="#1c6b4a"/><text x="644" y="144.5" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">1</text>
+    <text x="664" y="138" font-weight="600" fill="#1f1e1c">Reads stay on your computer</text>
+    <text x="664" y="156">Searches run on a local SQLite</text>
+    <text x="664" y="173">database, opened read-only.</text>
+
+    <circle cx="644" cy="216" r="9" fill="#1c6b4a"/><text x="644" y="220.5" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">2</text>
+    <text x="664" y="214" font-weight="600" fill="#1f1e1c">Messages are untrusted text</text>
+    <text x="664" y="232">The assistant is told to report</text>
+    <text x="664" y="249">what people wrote, never obey it.</text>
+
+    <circle cx="644" cy="292" r="9" fill="#1c6b4a"/><text x="644" y="296.5" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">3</text>
+    <text x="664" y="290" font-weight="600" fill="#1f1e1c">You confirm before sending</text>
+    <text x="664" y="308">Your client asks before each send.</text>
+    <text x="664" y="325">Read-only mode removes sending.</text>
+
+    <circle cx="644" cy="368" r="9" fill="#1c6b4a"/><text x="644" y="372.5" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">4</text>
+    <text x="664" y="366" font-weight="600" fill="#1f1e1c">Sends go through a locked API</text>
+    <text x="664" y="384">127.0.0.1 only, secret token,</text>
+    <text x="664" y="401">browser requests refused.</text>
+
+    <circle cx="644" cy="444" r="9" fill="#1c6b4a"/><text x="644" y="448.5" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">5</text>
+    <text x="664" y="442" font-weight="600" fill="#1f1e1c">Limits on what can leave</text>
+    <text x="664" y="460">No hidden files, no session data,</text>
+    <text x="664" y="477">30 sends a minute, optional</text>
+    <text x="664" y="494">recipient and folder allowlists.</text>
+  </g>
+  <line x1="636" y1="524" x2="912" y2="524" stroke="#e4e1d6"/>
+  <text x="636" y="550" font-size="12" fill="#6b6960">AI client → MCP server → bridge → WhatsApp</text>
+  <text x="636" y="570" font-size="12" fill="#6b6960">Names and messages here are invented.</text>
+
+  <rect x="28" y="540" width="560" height="72" rx="10" fill="#eef4ef" stroke="#c9dccf"/>
+  <text x="44" y="566" font-size="13" font-weight="600" fill="#1c6b4a">12 tools</text>
+  <text x="44" y="586" font-size="12.5" fill="#3d3c38">search contacts and chats, read messages with context, download media,</text>
+  <text x="44" y="603" font-size="12.5" fill="#3d3c38">send text, files and voice notes</text>
+</svg>
